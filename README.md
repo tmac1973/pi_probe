@@ -112,3 +112,7 @@ src/probe.ts     detection chain + normalization (port of haruspex src-tauri/src
 src/index.ts     Pi extension: /probe command, probe_inference_server tool, provider registration
 test/            mock-server smoke tests
 ```
+
+## License
+
+[MIT](./LICENSE)
