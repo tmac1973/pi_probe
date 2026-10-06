@@ -54,8 +54,10 @@ available and `/probe` in the command list.
 /probe help                                 # show usage
 ```
 
-Saved servers persist across restarts, but provider registration is per-session — after
-restarting Pi, reconnect with `/probe <name>` (the name is host-port, e.g. `compute-3000`).
+Saved servers persist across restarts and **reconnect automatically on session start** —
+the most recently used server is re-registered in the background (the compact widget
+shows when it's up). If the server is down, Pi starts normally and `/probe <name>`
+retries manually.
 
 The probe result shows as a **compact one-line widget** above the editor, e.g.
 `⚡ inference-compute-3000 · ThinkingCap-3.8-27B-PARO5 · session: …`. It stays until you

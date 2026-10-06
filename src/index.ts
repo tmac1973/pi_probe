@@ -14,6 +14,9 @@
  *   /probe clear             hide the probe widget
  *   /probe help              show usage
  *
+ * On session start the most recently used saved server is re-registered
+ * automatically (no re-probing needed after a restart).
+ *
  * Tool:
  *   probe_inference_server   the agent can discover/register servers itself
  *
@@ -26,7 +29,7 @@
 import { Type } from "typebox";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import {
 	probeInferenceServer,
@@ -61,6 +64,8 @@ interface SavedServer {
 	kind: string;
 	notes: string;
 	probedAt: number;
+	/** When this server was last probed or reconnected — the auto-reconnect target. */
+	lastUsed?: number;
 }
 
 function statePath(): string {
@@ -191,8 +196,19 @@ function saveServer(result: ProbeResult, apiKey?: string): void {
 		kind: result.kind,
 		notes: result.notes,
 		probedAt: Date.now(),
+		lastUsed: Date.now(),
 	});
 	saveState(servers);
+}
+
+/** Bump lastUsed on a saved server (called after a successful reconnect). */
+function markServerUsed(baseUrl: string): void {
+	const servers = loadState();
+	const s = servers.find((x) => x.baseUrl === baseUrl);
+	if (s) {
+		s.lastUsed = Date.now();
+		saveState(servers);
+	}
 }
 
 function formatProbeResult(result: ProbeResult, providerId: string): string {
@@ -237,8 +253,8 @@ function formatProbeHelp(): string[] {
 		"",
 		"  e.g.  /probe http://compute:3000      /probe compute-3000",
 		"",
-		"Saved servers persist across restarts; provider registration is per-session,",
-		"so reconnect after each restart with /probe <name>.",
+		"Saved servers persist across restarts and reconnect automatically on session",
+		"start (most recently used first). If a server is down, /probe <name> retries.",
 	];
 }
 
@@ -276,6 +292,37 @@ async function runProbe(
 		providerId,
 		modelId,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Auto-reconnect on session start
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-register the most recently used saved server so models survive a Pi
+ * restart. Never sets the session model (Pi restores that on resume; for a
+ * fresh session the user's default model applies). Runs detached — failures
+ * just mean the server was down; /probe <name> reconnects manually.
+ */
+async function autoReconnect(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+	const servers = loadState();
+	const target = servers
+		.filter((s) => (s.lastUsed ?? s.probedAt) > 0)
+		.sort((a, b) => (b.lastUsed ?? b.probedAt) - (a.lastUsed ?? a.probedAt))[0];
+	if (!target) return;
+	try {
+		const result = await probeInferenceServer(target.baseUrl, target.apiKey);
+		const providerId = registerServer(pi, result, target.apiKey);
+		markServerUsed(target.baseUrl);
+		// Show the first usable model in the widget, but do NOT call
+		// pi.setModel — Pi restores the session model on resume, and a fresh
+		// session should keep the user's configured default.
+		if (ctx.mode === "tui") {
+			ctx.ui.setWidget("probe", [formatProbeSummary(result, providerId)]);
+		}
+	} catch {
+		// Server unreachable — stay quiet; the user can /probe <name>.
+	}
 }
 
 export default function (pi: ExtensionAPI) {
@@ -380,5 +427,10 @@ export default function (pi: ExtensionAPI) {
 				details: undefined,
 			};
 		},
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		// Detached: never blocks session startup, never throws into Pi.
+		void autoReconnect(pi, ctx);
 	});
 }
