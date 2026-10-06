@@ -49,7 +49,13 @@ available and `/probe` in the command list.
 /probe                                      # re-probe last URL (or prompt for one)
 /probe list                                 # show saved servers
 /probe remove 192.168.1.10-8080             # unregister a saved server
+/probe clear                                # hide the probe widget above the editor
 ```
+
+The probe result shows as a **compact one-line widget** above the editor, e.g.
+`⚡ inference-compute-3000 · ThinkingCap-3.8-27B-PARO5 · session: …`. It stays until you
+dismiss it with `/probe clear` (or it's replaced by the next probe). Run `/probe list` for the
+full saved-server detail.
 
 A probe does three things:
 

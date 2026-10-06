@@ -213,6 +213,13 @@ function formatProbeResult(result: ProbeResult, providerId: string): string {
 	return lines.join("\n");
 }
 
+function formatProbeSummary(result: ProbeResult, providerId: string, modelId?: string): string {
+	const loaded = result.models.filter((m) => m.loaded !== false).length;
+	const models =
+		result.models.length === 1 ? result.models[0].id : `${result.models.length} models (${loaded} loaded)`;
+	return `⚡ ${providerId} · ${models}${modelId ? ` · session: ${modelId}` : ""} · /probe list for details`;
+}
+
 async function setFirstModel(pi: ExtensionAPI, ctx: ExtensionCommandContext | ExtensionToolContext, result: ProbeResult, providerId: string): Promise<string | undefined> {
 	const usable = result.models.find((m) => m.loaded !== false) ?? result.models[0];
 	if (!usable) return undefined;
@@ -231,22 +238,28 @@ async function runProbe(
 	ctx: ExtensionCommandContext | ExtensionToolContext,
 	urlArg: string,
 	apiKey?: string,
-): Promise<string> {
+): Promise<{ text: string; result?: ProbeResult; providerId?: string; modelId?: string }> {
 	let result: ProbeResult;
 	try {
 		result = await probeInferenceServer(urlArg, apiKey);
 	} catch (err) {
-		return `Probe failed: ${err instanceof Error ? err.message : String(err)}`;
+		return { text: `Probe failed: ${err instanceof Error ? err.message : String(err)}` };
 	}
 	const providerId = registerServer(pi, result, apiKey);
 	saveServer(result, apiKey);
 	const modelId = await setFirstModel(pi, ctx, result, providerId);
-	return formatProbeResult(result, providerId) + (modelId ? `\nSession model set to ${providerId}/${modelId}.` : "");
+	return {
+		text: formatProbeResult(result, providerId) + (modelId ? `\nSession model set to ${providerId}/${modelId}.` : ""),
+		result,
+		providerId,
+		modelId,
+	};
 }
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("probe", {
-		description: "Probe an inference server and register its models: /probe <url> [api-key], /probe list, /probe remove <name>",
+		description:
+			"Probe an inference server and register its models: /probe <url> [api-key], /probe list, /probe remove <name>, /probe clear",
 		async handler(args, ctx) {
 			const trimmed = args.trim();
 			if (!ctx.hasUI) {
@@ -260,8 +273,11 @@ export default function (pi: ExtensionAPI) {
 				if (!url.trim()) return;
 				const key = (await ctx.ui.input("API key (blank for none)")) ?? "";
 				const out = await runProbe(pi, ctx, url.trim(), key.trim() || undefined);
-				ctx.ui.notify(out.split("\n")[0], "info");
-				ctx.ui.setWidget("probe", out.split("\n"));
+				if (out.result && out.providerId) {
+					ctx.ui.setWidget("probe", [formatProbeSummary(out.result, out.providerId, out.modelId)]);
+				} else {
+					ctx.ui.notify(out.text, "error");
+				}
 				return;
 			}
 			if (trimmed === "list") {
@@ -277,6 +293,11 @@ export default function (pi: ExtensionAPI) {
 							`${s.name}  ${s.baseUrl}  [${s.kind}]  ${new Date(s.probedAt).toLocaleString()}  — ${s.notes}`,
 					),
 				);
+				return;
+			}
+			if (trimmed === "clear") {
+				ctx.ui.setWidget("probe", undefined);
+				ctx.ui.notify("Probe widget cleared", "info");
 				return;
 			}
 			if (trimmed.startsWith("remove ")) {
@@ -302,8 +323,11 @@ export default function (pi: ExtensionAPI) {
 			const url = parts[0];
 			const key = parts[1];
 			const out = await runProbe(pi, ctx, url, key);
-			ctx.ui.notify(out.split("\n")[0], "info");
-			ctx.ui.setWidget("probe", out.split("\n"));
+			if (out.result && out.providerId) {
+				ctx.ui.setWidget("probe", [formatProbeSummary(out.result, out.providerId, out.modelId)]);
+			} else {
+				ctx.ui.notify(out.text, "error");
+			}
 		},
 	});
 
@@ -322,7 +346,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const out = await runProbe(pi, ctx, params.url, params.api_key);
 			return {
-				content: [{ type: "text", text: out }],
+				content: [{ type: "text", text: out.text }],
 				details: undefined,
 			};
 		},
