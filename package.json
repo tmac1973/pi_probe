@@ -1,0 +1,21 @@
+{
+	"name": "pi-inference-probe",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Haruspex-style inference server discovery for the Pi coding agent",
+	"scripts": {
+		"check": "bunx tsc --noEmit"
+	},
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "1.0.4",
+		"@types/bun": "1.4.2",
+		"typebox": "1.3.27",
+		"typescript": "5.9.3"
+	}
+}
