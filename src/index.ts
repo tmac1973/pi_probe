@@ -258,7 +258,7 @@ function formatProbeHelp(): string[] {
 	];
 }
 
-async function setFirstModel(pi: ExtensionAPI, ctx: ExtensionCommandContext | ExtensionToolContext, result: ProbeResult, providerId: string): Promise<string | undefined> {
+async function setFirstModel(pi: ExtensionAPI, ctx: ExtensionContext, result: ProbeResult, providerId: string): Promise<string | undefined> {
 	const usable = result.models.find((m) => m.loaded !== false) ?? result.models[0];
 	if (!usable) return undefined;
 	const model = ctx.modelRegistry.find(providerId, usable.id);
@@ -300,9 +300,12 @@ async function runProbe(
 
 /**
  * Re-register the most recently used saved server so models survive a Pi
- * restart. Never sets the session model (Pi restores that on resume; for a
- * fresh session the user's default model applies). Runs detached — failures
- * just mean the server was down; /probe <name> reconnects manually.
+ * restart. Runs detached — failures just mean the server was down;
+ * /probe <name> reconnects manually.
+ *
+ * Model handling: adopts the first usable model ONLY when the session has
+ * none (fresh session with no default configured). A resumed session keeps
+ * its restored model; a session with a configured default keeps that.
  */
 async function autoReconnect(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	const servers = loadState();
@@ -314,11 +317,12 @@ async function autoReconnect(pi: ExtensionAPI, ctx: ExtensionContext): Promise<v
 		const result = await probeInferenceServer(target.baseUrl, target.apiKey);
 		const providerId = registerServer(pi, result, target.apiKey);
 		markServerUsed(target.baseUrl);
-		// Show the first usable model in the widget, but do NOT call
-		// pi.setModel — Pi restores the session model on resume, and a fresh
-		// session should keep the user's configured default.
+		let modelId: string | undefined;
+		if (!ctx.model || ctx.model.provider === "unknown") {
+			modelId = await setFirstModel(pi, ctx, result, providerId);
+		}
 		if (ctx.mode === "tui") {
-			ctx.ui.setWidget("probe", [formatProbeSummary(result, providerId)]);
+			ctx.ui.setWidget("probe", [formatProbeSummary(result, providerId, modelId)]);
 		}
 	} catch {
 		// Server unreachable — stay quiet; the user can /probe <name>.

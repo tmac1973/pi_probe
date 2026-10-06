@@ -33,13 +33,19 @@ const pi: never = {
 const ctx = {
 	mode: "tui",
 	hasUI: true,
+	// Fresh session with no default model: Pi holds the DEFAULT_MODEL
+	// placeholder (provider "unknown") — auto-reconnect must adopt the
+	// probed model, which is what makes typing work immediately.
+	model: { provider: "unknown" },
 	ui: {
 		setWidget: (_key: string, content: unknown) => {
 			calls.widget = content;
 		},
 		notify: () => {},
 	},
-	modelRegistry: { find: () => undefined },
+	// A real registry would resolve the just-registered model; the mock
+	// returns one so setFirstModel can complete and call pi.setModel.
+	modelRegistry: { find: () => ({ id: "tcclaviger/ThinkingCap-3.8-27B-PARO5", provider: "inference-compute-3000" }) },
 };
 
 ext(pi);
@@ -63,7 +69,8 @@ if (!expected) throw new Error("no saved servers in state file");
 if (calls.providers.length !== 1) throw new Error(`expected 1 provider, got ${calls.providers.length} (server down?)`);
 if (calls.providers[0] !== `inference-${expected.name}`)
 	throw new Error(`expected provider inference-${expected.name}, got ${calls.providers[0]}`);
-if (calls.setModel !== 0) throw new Error(`auto-reconnect must not call setModel, called ${calls.setModel}x`);
+if (calls.setModel !== 1)
+	throw new Error(`fresh session (provider "unknown") must adopt the probed model, setModel called ${calls.setModel}x`);
 if (!Array.isArray(calls.widget) || calls.widget.length !== 1 || !String(calls.widget[0]).startsWith("⚡"))
 	throw new Error(`expected compact one-line widget, got ${JSON.stringify(calls.widget)}`);
 
