@@ -46,11 +46,16 @@ available and `/probe` in the command list.
 ```
 /probe http://192.168.1.10:8080            # probe + register + set as session model
 /probe http://192.168.1.10:8080 my-key     # with a bearer key
+/probe 192.168.1.10-8080                   # reconnect a saved server (by name or URL)
 /probe                                      # re-probe last URL (or prompt for one)
 /probe list                                 # show saved servers
 /probe remove 192.168.1.10-8080             # unregister a saved server
 /probe clear                                # hide the probe widget above the editor
+/probe help                                 # show usage
 ```
+
+Saved servers persist across restarts, but provider registration is per-session — after
+restarting Pi, reconnect with `/probe <name>` (the name is host-port, e.g. `compute-3000`).
 
 The probe result shows as a **compact one-line widget** above the editor, e.g.
 `⚡ inference-compute-3000 · ThinkingCap-3.8-27B-PARO5 · session: …`. It stays until you

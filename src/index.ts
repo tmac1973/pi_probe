@@ -7,9 +7,12 @@
  *
  * Commands:
  *   /probe <url> [api-key]   probe + register + set as session model
+ *   /probe <name>            reconnect to a previously saved server
  *   /probe                   re-probe the last URL (or prompt for one)
  *   /probe list              show saved servers
  *   /probe remove <name>     unregister a saved server
+ *   /probe clear             hide the probe widget
+ *   /probe help              show usage
  *
  * Tool:
  *   probe_inference_server   the agent can discover/register servers itself
@@ -220,6 +223,25 @@ function formatProbeSummary(result: ProbeResult, providerId: string, modelId?: s
 	return `⚡ ${providerId} · ${models}${modelId ? ` · session: ${modelId}` : ""} · /probe list for details`;
 }
 
+function formatProbeHelp(): string[] {
+	return [
+		"/probe — connect Pi to a running inference server",
+		"",
+		"  /probe <url> [api-key]   probe a server, register its models, set as session model",
+		"  /probe <name>            reconnect to a saved server (by name or URL)",
+		"  /probe                   re-probe the last server (or prompt for one)",
+		"  /probe list              show all saved servers",
+		"  /probe remove <name>     unregister + forget a saved server",
+		"  /probe clear             hide the probe widget",
+		"  /probe help              this help",
+		"",
+		"  e.g.  /probe http://compute:3000      /probe compute-3000",
+		"",
+		"Saved servers persist across restarts; provider registration is per-session,",
+		"so reconnect after each restart with /probe <name>.",
+	];
+}
+
 async function setFirstModel(pi: ExtensionAPI, ctx: ExtensionCommandContext | ExtensionToolContext, result: ProbeResult, providerId: string): Promise<string | undefined> {
 	const usable = result.models.find((m) => m.loaded !== false) ?? result.models[0];
 	if (!usable) return undefined;
@@ -259,7 +281,7 @@ async function runProbe(
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("probe", {
 		description:
-			"Probe an inference server and register its models: /probe <url> [api-key], /probe list, /probe remove <name>, /probe clear",
+			"Probe an inference server and register its models: /probe <url> [api-key], /probe <name> to reconnect a saved server, /probe list, /probe remove <name>, /probe clear, /probe help",
 		async handler(args, ctx) {
 			const trimmed = args.trim();
 			if (!ctx.hasUI) {
@@ -300,6 +322,10 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Probe widget cleared", "info");
 				return;
 			}
+			if (trimmed === "help" || trimmed === "?") {
+				ctx.ui.setWidget("probe", formatProbeHelp());
+				return;
+			}
 			if (trimmed.startsWith("remove ")) {
 				const name = trimmed.slice(7).trim();
 				const servers = loadState();
@@ -318,11 +344,15 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`Removed ${removed.name}`, "info");
 				return;
 			}
-			// /probe <url> [api-key]
+			// /probe <url|name> [api-key] — probe a new server or reconnect a saved one
 			const parts = trimmed.split(/\s+/);
-			const url = parts[0];
+			const arg = parts[0];
 			const key = parts[1];
-			const out = await runProbe(pi, ctx, url, key);
+			// Normalize the arg so "compute:3000", "http://compute:3000", and
+			// "http://compute:3000/" all compare equal.
+			const norm = (s: string) => s.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
+			const saved = loadState().find((s) => s.name === arg || norm(s.baseUrl) === norm(arg));
+			const out = await runProbe(pi, ctx, saved ? saved.baseUrl : arg, key ?? saved?.apiKey);
 			if (out.result && out.providerId) {
 				ctx.ui.setWidget("probe", [formatProbeSummary(out.result, out.providerId, out.modelId)]);
 			} else {
